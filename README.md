@@ -10,30 +10,10 @@ This repo provides `fork-action.sh` to bootstrap forks with sync infrastructure,
 
 ## How It Works
 
-```
-upstream repo                     your org fork
-(third-party)                     (pinned, reviewed)
-     |                                  |
-     |  fork-action.sh                  |
-     |  ─────────────────────>          |
-     |  creates fork + infra            |
-     |                                  |
-     |  sync-upstream (weekly cron)     |
-     |  ─────────────────────>          |
-     |  fast-forward merge to           |
-     |  upstream-tracking branch,       |
-     |  opens PR for review             |
-     |                                  |
-     |  sync-tags (weekly cron)         |
-     |  ─────────────────────>          |
-     |  detects new releases,           |
-     |  tag mutations, deletions        |
-     |                                  |
-     |  security-scan (on PR)           |
-     |  ─────────────────────>          |
-     |  dependency review, CodeQL,      |
-     |  diff summary                    |
-```
+1. **`fork-action.sh`** (one-time setup) -- Creates the fork, caller workflows, manifest, and branch structure
+2. **Sync Upstream** (weekly cron) -- Fast-forward merges the `upstream-tracking` branch with upstream's default branch, opens a PR for review
+3. **Sync Tags** (weekly cron) -- Detects new upstream releases, tag mutations, and deletions
+4. **Security Scan** (on PR) -- Runs dependency review, CodeQL analysis, and posts a diff summary
 
 ## Quick Start
 
@@ -64,7 +44,7 @@ FORK_MANIFEST.json     # Upstream provenance and sync state
 CODEOWNERS             # Protects sync infrastructure files
 ```
 
-Each workflow is a thin caller (~20 lines) that delegates to reusable workflows in `fork-action-sync-templates` via the `@v1` floating tag. Bug fixes and improvements propagate to all forks automatically.
+Each workflow is a thin caller that delegates to reusable workflows in `fork-action-sync-templates` via the `@v1` floating tag. Bug fixes and improvements propagate to all forks automatically.
 
 ## Options
 
