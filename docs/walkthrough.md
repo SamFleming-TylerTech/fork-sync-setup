@@ -271,7 +271,7 @@ Security Review Checklist:
 - [ ] Review the changelog and release notes
 - [ ] Diff against the previous tag
 - [ ] Check for new or modified dependencies
-- [ ] Run CodeQL or static analysis
+- [ ] Run static analysis on changed files
 - [ ] Check for added or modified binary files
 
 After review, create the tag:
