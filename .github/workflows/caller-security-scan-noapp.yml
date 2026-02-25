@@ -63,7 +63,7 @@ jobs:
           base-ref: refs/heads/__DEFAULT_BRANCH__
           head-ref: refs/heads/upstream-tracking
           fail-on-severity: high
-          comment-summary-in-pr: always
+          comment-summary-in-pr: never
         continue-on-error: true
 
   diff-summary:
