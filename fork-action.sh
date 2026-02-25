@@ -24,6 +24,7 @@ FORK_ORG="${FORK_ORG:-tyler-technologies-oss}"
 TEMPLATES_REPO="${TEMPLATES_REPO:-SamFleming-TylerTech/fork-sync-shared-workflow}"
 TEMPLATES_REF="${TEMPLATES_REF:-v1}"
 FORK_IS_PERSONAL=false
+USE_GITHUB_APP=true
 TEMP_DIR=""
 
 # ---------------------------------------------------------------------------
@@ -81,6 +82,7 @@ OPTIONS:
     --tag <tag>            Pin a specific upstream tag in the fork (e.g. v7.0.8)
     --existing             Operate on an already-forked repo in the target org/user
     --force-update         Force overwrite existing sync infrastructure (use with --existing)
+    --no-app               Skip GitHub App requirement (security scan runs inline with sync)
     --templates-repo <r>   Central templates repo (default: SamFleming-TylerTech/fork-sync-shared-workflow, or TEMPLATES_REPO env var)
     --templates-ref <ref>  Central templates ref/tag (default: v1, or TEMPLATES_REF env var)
     --help                 Show this help message and exit
@@ -171,6 +173,10 @@ parse_args() {
                 ;;
             --force-update)
                 FORCE_UPDATE=true
+                shift
+                ;;
+            --no-app)
+                USE_GITHUB_APP=false
                 shift
                 ;;
             --templates-repo)
@@ -268,13 +274,25 @@ check_prerequisites() {
 
 check_template_files() {
     local missing=false
-    local required_files=(
-        ".github/workflows/caller-sync-upstream.yml"
-        ".github/workflows/caller-sync-tags.yml"
-        ".github/workflows/caller-security-scan.yml"
-        "templates/FORK_MANIFEST.json"
-        "templates/CODEOWNERS"
-    )
+    local required_files
+
+    if [[ "${USE_GITHUB_APP}" == "true" ]]; then
+        required_files=(
+            ".github/workflows/caller-sync-upstream.yml"
+            ".github/workflows/caller-sync-tags.yml"
+            ".github/workflows/caller-security-scan.yml"
+            "templates/FORK_MANIFEST.json"
+            "templates/CODEOWNERS"
+        )
+    else
+        required_files=(
+            ".github/workflows/caller-sync-upstream-noapp.yml"
+            ".github/workflows/caller-sync-tags.yml"
+            ".github/workflows/caller-security-scan-noapp.yml"
+            "templates/FORK_MANIFEST.json"
+            "templates/CODEOWNERS"
+        )
+    fi
 
     for f in "${required_files[@]}"; do
         if [[ ! -f "${SCRIPT_DIR}/${f}" ]]; then
@@ -392,11 +410,21 @@ copy_and_substitute_workflows() {
     mkdir -p "${workflow_dir}"
 
     # Map caller templates to their deployed names
-    local -A caller_map=(
-        ["caller-sync-upstream.yml"]="sync-upstream.yml"
-        ["caller-sync-tags.yml"]="sync-tags.yml"
-        ["caller-security-scan.yml"]="security-scan.yml"
-    )
+    local -A caller_map
+
+    if [[ "${USE_GITHUB_APP}" == "true" ]]; then
+        caller_map=(
+            ["caller-sync-upstream.yml"]="sync-upstream.yml"
+            ["caller-sync-tags.yml"]="sync-tags.yml"
+            ["caller-security-scan.yml"]="security-scan.yml"
+        )
+    else
+        caller_map=(
+            ["caller-sync-upstream-noapp.yml"]="sync-upstream.yml"
+            ["caller-sync-tags.yml"]="sync-tags.yml"
+            ["caller-security-scan-noapp.yml"]="security-scan.yml"
+        )
+    fi
 
     for src_name in "${!caller_map[@]}"; do
         local dst_name="${caller_map[${src_name}]}"
@@ -412,7 +440,7 @@ copy_and_substitute_workflows() {
         sed -i "s|__TEMPLATES_REPO__|${TEMPLATES_REPO}|g" "${dst}"
         sed -i "s|__TEMPLATES_REF__|${TEMPLATES_REF}|g" "${dst}"
 
-        success "  Copied and configured: .github/workflows/${dst_name} (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+        success "  Copied and configured: .github/workflows/${dst_name}"
     done
 }
 
@@ -462,8 +490,7 @@ sync_infra_exists() {
     [[ -f "${CLONE_DIR}/FORK_MANIFEST.json" ]] && \
     [[ -f "${CLONE_DIR}/CODEOWNERS" ]] && \
     [[ -f "${CLONE_DIR}/.github/workflows/sync-upstream.yml" ]] && \
-    [[ -f "${CLONE_DIR}/.github/workflows/sync-tags.yml" ]] && \
-    [[ -f "${CLONE_DIR}/.github/workflows/security-scan.yml" ]]
+    [[ -f "${CLONE_DIR}/.github/workflows/sync-tags.yml" ]]
 }
 
 commit_and_push() {
@@ -648,9 +675,15 @@ print_summary() {
 
     echo ""
     echo -e "  ${COLOR_BOLD}Sync infrastructure added:${COLOR_RESET}"
-    echo "    - .github/workflows/sync-upstream.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
-    echo "    - .github/workflows/sync-tags.yml      (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
-    echo "    - .github/workflows/security-scan.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+    if [[ "${USE_GITHUB_APP}" == "true" ]]; then
+        echo "    - .github/workflows/sync-upstream.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+        echo "    - .github/workflows/sync-tags.yml      (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+        echo "    - .github/workflows/security-scan.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+    else
+        echo "    - .github/workflows/sync-upstream.yml  (standalone, uses GITHUB_TOKEN)"
+        echo "    - .github/workflows/sync-tags.yml      (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
+        echo "    - .github/workflows/security-scan.yml  (workflow_run trigger, uses GITHUB_TOKEN)"
+    fi
     echo "    - FORK_MANIFEST.json"
     echo "    - CODEOWNERS"
     echo "    - Labels: upstream-sync, needs-security-review, upstream-release, security-alert, upstream-tag-deleted"
@@ -658,7 +691,11 @@ print_summary() {
     echo -e "  ${COLOR_BOLD}Next steps:${COLOR_RESET}"
     echo "    1. Review the fork: https://github.com/${FORK_ORG}/${UPSTREAM_REPO}"
     echo "    2. Verify GitHub Actions are running: https://github.com/${FORK_ORG}/${UPSTREAM_REPO}/actions"
-    echo "    3. Add required secrets (if any) under repository settings."
+    if [[ "${USE_GITHUB_APP}" == "true" ]]; then
+        echo "    3. Add FORK_SYNC_APP_ID and FORK_SYNC_APP_PRIVATE_KEY secrets."
+    else
+        echo "    3. No secrets required (using GITHUB_TOKEN)."
+    fi
 
     if [[ -n "${TAG}" ]]; then
         echo "    4. Reference the pinned tag in workflows:"

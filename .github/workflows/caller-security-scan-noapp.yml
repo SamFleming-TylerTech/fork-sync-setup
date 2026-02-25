@@ -1,0 +1,215 @@
+name: Security Scan
+
+on:
+  workflow_run:
+    workflows: ["Sync Upstream"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  statuses: write
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: true
+
+jobs:
+  find-pr:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    outputs:
+      pr_number: ${{ steps.find.outputs.pr_number }}
+      has_pr: ${{ steps.find.outputs.has_pr }}
+    steps:
+      - name: Find open sync PR
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUM=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --base __DEFAULT_BRANCH__ \
+            --head upstream-tracking \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "${PR_NUM}" ]; then
+            echo "Found sync PR #${PR_NUM}"
+            echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
+            echo "has_pr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No open sync PR found. Skipping security scan."
+            echo "has_pr=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  dependency-review:
+    needs: find-pr
+    if: needs.find-pr.outputs.has_pr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout upstream-tracking
+        uses: actions/checkout@v4
+        with:
+          ref: upstream-tracking
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          base-ref: refs/heads/__DEFAULT_BRANCH__
+          head-ref: refs/heads/upstream-tracking
+          fail-on-severity: high
+          comment-summary-in-pr: always
+        continue-on-error: true
+
+  codeql:
+    needs: find-pr
+    if: needs.find-pr.outputs.has_pr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout upstream-tracking
+        uses: actions/checkout@v4
+        with:
+          ref: upstream-tracking
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+  diff-summary:
+    needs: find-pr
+    if: needs.find-pr.outputs.has_pr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate diff analysis
+        id: diff
+        run: |
+          git fetch origin upstream-tracking __DEFAULT_BRANCH__
+          BASE_SHA=$(git rev-parse origin/__DEFAULT_BRANCH__)
+          HEAD_SHA=$(git rev-parse origin/upstream-tracking)
+
+          FILES_CHANGED=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}" | wc -l)
+          LINES_ADDED=$(git diff --numstat "${BASE_SHA}...${HEAD_SHA}" | awk '{s+=$1} END {print s+0}')
+          LINES_REMOVED=$(git diff --numstat "${BASE_SHA}...${HEAD_SHA}" | awk '{s+=$2} END {print s+0}')
+
+          echo "files_changed=${FILES_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "lines_added=${LINES_ADDED}" >> "$GITHUB_OUTPUT"
+          echo "lines_removed=${LINES_REMOVED}" >> "$GITHUB_OUTPUT"
+
+          MANIFEST_CHANGES=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}" -- 'action.yml' 'action.yaml' || true)
+          echo "manifest_changes=${MANIFEST_CHANGES:-None}" >> "$GITHUB_OUTPUT"
+
+          SCRIPT_CHANGES=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}" -- '*.sh' '*.ps1' '*.py' || true)
+          echo "script_changes=${SCRIPT_CHANGES:-None}" >> "$GITHUB_OUTPUT"
+
+          BINARY_CHANGES=$(git diff --numstat "${BASE_SHA}...${HEAD_SHA}" | grep -E '^-\s+-\s+' | awk '{print $3}' || true)
+          echo "binary_changes=${BINARY_CHANGES:-None}" >> "$GITHUB_OUTPUT"
+
+      - name: Post diff summary as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ needs.find-pr.outputs.pr_number }};
+            const body = `## Security Diff Summary
+
+            | Metric | Count |
+            |--------|-------|
+            | Files changed | ${{ steps.diff.outputs.files_changed }} |
+            | Lines added | ${{ steps.diff.outputs.lines_added }} |
+            | Lines removed | ${{ steps.diff.outputs.lines_removed }} |
+
+            ### Action Manifest Changes
+            \`${{ steps.diff.outputs.manifest_changes }}\`
+
+            ### Script Changes
+            \`${{ steps.diff.outputs.script_changes }}\`
+
+            ### Binary Files
+            \`${{ steps.diff.outputs.binary_changes }}\`
+            `;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const marker = '## Security Diff Summary';
+            const existing = comments.data.find(c =>
+              c.user.type === 'Bot' && c.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body,
+              });
+            }
+
+  report-status:
+    needs: [find-pr, dependency-review, codeql, diff-summary]
+    if: always() && needs.find-pr.outputs.has_pr == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+      pull-requests: read
+    steps:
+      - name: Report security scan status on PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # dependency-review and diff-summary are blocking; codeql is informational
+          # (shell-only repos have no languages for CodeQL to analyze)
+          if [ "${{ needs.dependency-review.result }}" = "failure" ] || \
+             [ "${{ needs.diff-summary.result }}" = "failure" ]; then
+            STATE="failure"
+            DESC="Security scan failed"
+          else
+            STATE="success"
+            DESC="Security scan passed"
+          fi
+
+          PR_HEAD_SHA=$(gh pr view ${{ needs.find-pr.outputs.pr_number }} \
+            --repo "${{ github.repository }}" \
+            --json headRefOid \
+            --jq '.headRefOid')
+
+          gh api "repos/${{ github.repository }}/statuses/${PR_HEAD_SHA}" \
+            -f state="${STATE}" \
+            -f context="security-scan" \
+            -f description="${DESC}" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          echo "Posted '${STATE}' status on PR #${{ needs.find-pr.outputs.pr_number }} (${PR_HEAD_SHA:0:12})"
