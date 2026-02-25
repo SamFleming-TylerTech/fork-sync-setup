@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  security-events: write
   statuses: write
 
 concurrency:
@@ -66,30 +65,6 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: always
         continue-on-error: true
-
-  codeql:
-    needs: find-pr
-    if: needs.find-pr.outputs.has_pr == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout upstream-tracking
-        uses: actions/checkout@v4
-        with:
-          ref: upstream-tracking
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
 
   diff-summary:
     needs: find-pr
@@ -179,37 +154,55 @@ jobs:
             }
 
   report-status:
-    needs: [find-pr, dependency-review, codeql, diff-summary]
+    needs: [find-pr, dependency-review, diff-summary]
     if: always() && needs.find-pr.outputs.has_pr == 'true'
     runs-on: ubuntu-latest
     permissions:
       statuses: write
       pull-requests: read
     steps:
-      - name: Report security scan status on PR
+      - name: Report scan statuses on PR
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # dependency-review and diff-summary are blocking; codeql is informational
-          # (shell-only repos have no languages for CodeQL to analyze)
-          if [ "${{ needs.dependency-review.result }}" = "failure" ] || \
-             [ "${{ needs.diff-summary.result }}" = "failure" ]; then
-            STATE="failure"
-            DESC="Security scan failed"
-          else
-            STATE="success"
-            DESC="Security scan passed"
-          fi
-
           PR_HEAD_SHA=$(gh pr view ${{ needs.find-pr.outputs.pr_number }} \
             --repo "${{ github.repository }}" \
             --json headRefOid \
             --jq '.headRefOid')
 
-          gh api "repos/${{ github.repository }}/statuses/${PR_HEAD_SHA}" \
-            -f state="${STATE}" \
-            -f context="security-scan" \
-            -f description="${DESC}" \
-            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          post_status() {
+            local context="$1" state="$2" desc="$3"
+            gh api "repos/${{ github.repository }}/statuses/${PR_HEAD_SHA}" \
+              -f state="${state}" \
+              -f context="${context}" \
+              -f description="${desc}" \
+              -f target_url="${RUN_URL}"
+          }
 
-          echo "Posted '${STATE}' status on PR #${{ needs.find-pr.outputs.pr_number }} (${PR_HEAD_SHA:0:12})"
+          # Map job results to GitHub status states
+          map_result() {
+            case "$1" in
+              success)  echo "success" ;;
+              failure)  echo "failure" ;;
+              skipped)  echo "success" ;;
+              *)        echo "error" ;;
+            esac
+          }
+
+          # Post individual scan statuses
+          DEP_STATE=$(map_result "${{ needs.dependency-review.result }}")
+          post_status "security-scan/dependency-review" "${DEP_STATE}" "Dependency review: ${{ needs.dependency-review.result }}"
+
+          DIFF_STATE=$(map_result "${{ needs.diff-summary.result }}")
+          post_status "security-scan/diff-summary" "${DIFF_STATE}" "Diff summary: ${{ needs.diff-summary.result }}"
+
+          # Post aggregate status
+          if [ "${{ needs.dependency-review.result }}" = "failure" ] || \
+             [ "${{ needs.diff-summary.result }}" = "failure" ]; then
+            post_status "security-scan" "failure" "Security scan failed"
+          else
+            post_status "security-scan" "success" "Security scan passed"
+          fi
+
+          echo "Posted statuses on PR #${{ needs.find-pr.outputs.pr_number }} (${PR_HEAD_SHA:0:12})"

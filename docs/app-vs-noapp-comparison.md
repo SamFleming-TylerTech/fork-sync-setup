@@ -24,7 +24,6 @@ Comparison based on end-to-end tests using `acme/deploy-action` forked into `my-
 | **Security scan trigger** | `on: pull_request` (triggered by PR creation) | `on: workflow_run` (triggered by sync-upstream completion) |
 | **PR author** | GitHub App bot | `github-actions[bot]` |
 | **dependency-review** | Runs in PR context | Runs with explicit `base-ref`/`head-ref` |
-| **CodeQL** | Works if languages detected | Same -- non-blocking for status check |
 | **diff-summary** | Works | Works |
 | **Branch protection check** | `security-scan` | `security-scan` (posted via commit status API) |
 | **Centralized updates** | All 3 workflows are thin callers -- updates propagate automatically | `sync-upstream` and `security-scan` are standalone -- must `--force-update` to update |
@@ -41,7 +40,7 @@ The key challenge with `GITHUB_TOKEN` is that PRs it creates don't trigger `on: 
 4. GitHub fires workflow_run event
 5. security-scan.yml triggers automatically
 6. Finds the open sync PR
-7. Runs dependency-review, codeql, diff-summary
+7. Runs dependency-review, diff-summary
 8. Posts commit status "security-scan" on the PR head SHA
 9. Branch protection check is satisfied
 ```
