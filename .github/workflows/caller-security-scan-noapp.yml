@@ -9,6 +9,7 @@ permissions:
   contents: read
   pull-requests: write
   statuses: write
+  checks: write
 
 concurrency:
   group: security-scan
@@ -159,6 +160,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       statuses: write
+      checks: write
       pull-requests: read
     steps:
       - name: Report scan statuses on PR
@@ -180,8 +182,20 @@ jobs:
               -f target_url="${RUN_URL}"
           }
 
-          # Map job results to GitHub status states
-          map_result() {
+          post_check() {
+            local name="$1" conclusion="$2" summary="$3"
+            gh api "repos/${{ github.repository }}/check-runs" \
+              -f name="${name}" \
+              -f head_sha="${PR_HEAD_SHA}" \
+              -f status="completed" \
+              -f conclusion="${conclusion}" \
+              -f "output[title]=${name}" \
+              -f "output[summary]=${summary}" \
+              -f details_url="${RUN_URL}"
+          }
+
+          # Map job results to status/check states
+          map_status() {
             case "$1" in
               success)  echo "success" ;;
               failure)  echo "failure" ;;
@@ -190,19 +204,35 @@ jobs:
             esac
           }
 
-          # Post individual scan statuses
-          DEP_STATE=$(map_result "${{ needs.dependency-review.result }}")
-          post_status "security-scan/dependency-review" "${DEP_STATE}" "Dependency review: ${{ needs.dependency-review.result }}"
+          map_check() {
+            case "$1" in
+              success)  echo "success" ;;
+              failure)  echo "failure" ;;
+              skipped)  echo "skipped" ;;
+              *)        echo "failure" ;;
+            esac
+          }
 
-          DIFF_STATE=$(map_result "${{ needs.diff-summary.result }}")
-          post_status "security-scan/diff-summary" "${DIFF_STATE}" "Diff summary: ${{ needs.diff-summary.result }}"
+          # Post check runs (visible as linked checks on PR)
+          post_check "security-scan/dependency-review" \
+            "$(map_check "${{ needs.dependency-review.result }}")" \
+            "Dependency review: ${{ needs.dependency-review.result }}"
 
-          # Post aggregate status
+          post_check "security-scan/diff-summary" \
+            "$(map_check "${{ needs.diff-summary.result }}")" \
+            "Diff summary: ${{ needs.diff-summary.result }}"
+
+          # Post aggregate commit status (satisfies branch protection)
           if [ "${{ needs.dependency-review.result }}" = "failure" ] || \
              [ "${{ needs.diff-summary.result }}" = "failure" ]; then
-            post_status "security-scan" "failure" "Security scan failed"
+            AGGREGATE="failure"
+            DESC="Security scan failed"
           else
-            post_status "security-scan" "success" "Security scan passed"
+            AGGREGATE="success"
+            DESC="Security scan passed"
           fi
 
-          echo "Posted statuses on PR #${{ needs.find-pr.outputs.pr_number }} (${PR_HEAD_SHA:0:12})"
+          post_status "security-scan" "${AGGREGATE}" "${DESC}"
+          post_check "security-scan" "$(map_check "${AGGREGATE}")" "${DESC}"
+
+          echo "Posted checks and status on PR #${{ needs.find-pr.outputs.pr_number }} (${PR_HEAD_SHA:0:12})"
