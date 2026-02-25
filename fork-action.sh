@@ -113,8 +113,9 @@ WHAT THIS SCRIPT DOES:
     6. Copies a CODEOWNERS file for review enforcement.
     7. Commits and pushes the sync infrastructure to the default branch.
     8. Enables GitHub Actions on the fork.
-    9. Configures branch protection (1 required reviewer, security-scan status check).
-   10. If --tag is specified, creates an annotated tag in the fork referencing the upstream SHA.
+    9. Creates required labels for sync workflows (upstream-sync, security-alert, etc.).
+   10. Configures branch protection (1 required reviewer, security-scan status check).
+   11. If --tag is specified, creates an annotated tag in the fork referencing the upstream SHA.
 
 PREREQUISITES:
     - gh CLI installed and authenticated (https://cli.github.com)
@@ -248,6 +249,7 @@ check_prerequisites() {
         if [[ "${current_user}" != "${FORK_ORG}" ]]; then
             error "Target '${FORK_ORG}' is a personal account but you are authenticated as '${current_user}'."
             error "You can only fork to your own account or an org you belong to."
+            error "Switch accounts with: gh auth switch --user ${FORK_ORG}"
             exit 1
         fi
         success "Target is personal account: ${FORK_ORG}"
@@ -520,11 +522,35 @@ enable_github_actions() {
     success "Vulnerability alerts enabled."
 }
 
+create_labels() {
+    info "Creating required labels..."
+
+    local repo="${FORK_ORG}/${UPSTREAM_REPO}"
+    local -A labels=(
+        ["upstream-sync"]="0E8A16|PR syncing upstream changes"
+        ["needs-security-review"]="D93F0B|Requires security review before merge"
+        ["upstream-release"]="1D76DB|New upstream release detected"
+        ["security-alert"]="B60205|Security alert - tag mutation detected"
+        ["upstream-tag-deleted"]="FBCA04|Upstream tag was deleted"
+    )
+
+    for name in "${!labels[@]}"; do
+        local color="${labels[${name}]%%|*}"
+        local description="${labels[${name}]#*|}"
+        if gh label create "${name}" --repo "${repo}" --color "${color}" --description "${description}" 2>/dev/null; then
+            success "  Label created: ${name}"
+        else
+            warn "  Label '${name}' already exists. Skipping."
+        fi
+    done
+}
+
 configure_branch_protection() {
     info "Configuring branch protection for '${DEFAULT_BRANCH}'..."
 
     gh api "repos/${FORK_ORG}/${UPSTREAM_REPO}/branches/${DEFAULT_BRANCH}/protection" \
         --method PUT \
+        --silent \
         --input - <<EOF
 {
     "required_status_checks": {
@@ -627,6 +653,7 @@ print_summary() {
     echo "    - .github/workflows/security-scan.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
     echo "    - FORK_MANIFEST.json"
     echo "    - CODEOWNERS"
+    echo "    - Labels: upstream-sync, needs-security-review, upstream-release, security-alert, upstream-tag-deleted"
     echo ""
     echo -e "  ${COLOR_BOLD}Next steps:${COLOR_RESET}"
     echo "    1. Review the fork: https://github.com/${FORK_ORG}/${UPSTREAM_REPO}"
@@ -664,6 +691,7 @@ main() {
     copy_codeowners
     commit_and_push
     enable_github_actions
+    create_labels
     configure_branch_protection
     create_tag
 
