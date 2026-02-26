@@ -11,8 +11,8 @@ This repo provides `fork-action.sh` to bootstrap forks with sync infrastructure 
 ## How It Works
 
 1. **`fork-action.sh`** (one-time setup) -- Creates the fork, workflows, manifest, and branch structure
-2. **Sync Upstream** (weekly cron) -- Fast-forward merges the `upstream-tracking` branch with upstream's default branch, opens a PR for review
-3. **Sync Tags** (weekly cron) -- Detects new upstream releases, tag mutations, and deletions
+2. **Sync Upstream** (weekly cron) -- Verifies upstream repo identity, fast-forward merges the `upstream-tracking` branch, opens a PR for review
+3. **Sync Tags** (weekly cron) -- Detects new upstream releases, tag mutations, and tag deletions; creates issues for each
 4. **Security Scan** (automatic) -- Runs CodeQL, dependency review, and diff summary on each sync PR
 
 ## Quick Start
@@ -40,11 +40,20 @@ In the fork repository:
   sync-upstream.yml    # Syncs upstream changes, creates PR
   sync-tags.yml        # Monitors tag mutations, new releases, deletions
   security-scan.yml    # Runs CodeQL, dependency review + diff summary on sync PRs
-FORK_MANIFEST.json     # Upstream provenance and sync state
-CODEOWNERS             # Protects sync infrastructure files
+FORK_MANIFEST.json     # Upstream provenance, repo identity, and sync state
+CODEOWNERS             # Protects sync infrastructure and action definition files
 ```
 
 No secrets are needed. Everything uses `GITHUB_TOKEN`. The security scan triggers automatically via `workflow_run` after sync-upstream completes, posts check runs and commit statuses on the PR, and satisfies branch protection.
+
+## Security Features
+
+- **Upstream repo identity verification** -- `FORK_MANIFEST.json` records the upstream GitHub repo ID; the sync workflow verifies it on every run to detect name squatting or repo transfer attacks
+- **SHA-pinned actions** -- All actions in workflow templates are pinned to full commit SHAs, not mutable tags
+- **Branch protection** -- Default branch requires 1 reviewer + `security-scan` status check; `upstream-tracking` branch blocks force-push and deletion
+- **Input validation** -- Tag names and org/user names are validated to prevent injection attacks
+- **CODEOWNERS** -- Protects `.github/`, `FORK_MANIFEST.json`, `CODEOWNERS`, `action.yml`, `action.yaml`, `Dockerfile`, and `dist/`
+- **Scan concurrency** -- Security scans never cancel in-progress runs, preventing evasion
 
 ## Options
 

@@ -41,10 +41,13 @@ This:
 - Creates `my-org/deploy-action` as a GitHub fork
 - Adds an `upstream-tracking` branch
 - Copies workflows (`sync-upstream.yml`, `sync-tags.yml`, `security-scan.yml`)
-- Generates `FORK_MANIFEST.json` with upstream provenance
-- Adds `CODEOWNERS` for review enforcement
-- Creates required labels (`upstream-sync`, `needs-security-review`, etc.)
-- Enables branch protection (1 reviewer + `security-scan` status check required)
+- Generates `FORK_MANIFEST.json` with upstream provenance and repo identity (GitHub repo ID)
+- Adds `CODEOWNERS` for review enforcement on sync infrastructure and action definition files
+- Creates required labels (`upstream-sync`, `needs-security-review`, `upstream-release`, `security-alert`, `upstream-tag-deleted`)
+- Enables GitHub Actions, issues, and vulnerability alerts on the fork
+- Configures branch protection:
+  - Default branch: 1 required reviewer, `security-scan` status check, enforced for admins
+  - `upstream-tracking`: force-push and deletion blocked, enforced for admins
 - Creates an annotated tag `v2.0.0` pinned to the reviewed upstream commit
 
 No secrets are needed. Everything uses `GITHUB_TOKEN`.
@@ -112,13 +115,16 @@ Once the fork exists, three workflows run on schedule.
 
 Checks if the upstream repo has new commits. If it does:
 
-1. Fast-forward merges `upstream-tracking` with upstream's latest
-2. Opens a PR to your default branch with:
+1. Verifies upstream repo identity against the `repo_id` in `FORK_MANIFEST.json` (detects name squatting or repo transfer attacks)
+2. Fast-forward merges `upstream-tracking` with upstream's latest
+3. Updates `FORK_MANIFEST.json` with the new sync SHA and date
+4. Opens a PR to your default branch with:
    - Diff stats
-   - List of security-relevant file changes (action.yml, scripts, Dockerfiles)
+   - List of security-relevant file changes (action.yml, scripts, Dockerfiles, dist/)
    - Link to the upstream commit comparison
    - Review checklist
-3. Security scan auto-triggers via `workflow_run` after sync completes
+
+If the fast-forward merge fails (upstream history was rewritten), the workflow creates a divergence issue with investigation steps and security guidance.
 
 Example PR body:
 
@@ -146,14 +152,14 @@ entrypoint.sh
 
 ### Sync Tags (Wednesdays)
 
-Compares upstream tags against fork tags. Detects three scenarios:
+Compares upstream tags against fork tags. Creates issues for three scenarios:
 
 **Tag Mutation** -- upstream force-pushed a tag to a different commit:
 
 ```
 [SECURITY ALERT] Upstream tag mutated: v2.0.0
 
-Fork (pinned):     a1b2c3d...
+Fork (pinned):      a1b2c3d...
 Upstream (changed): x9y8z7w...
 
 This could indicate a supply chain attack.
@@ -193,11 +199,11 @@ Triggers automatically after sync-upstream completes via `workflow_run`. Runs th
 
 | Check | What it does |
 |-------|-------------|
-| `codeql` | Runs CodeQL static analysis (javascript-typescript by default) |
+| `codeql` | Runs CodeQL static analysis (javascript-typescript); informational only, results appear in the Code Scanning tab |
 | `dependency-review` | Scans for new vulnerabilities in dependency changes |
 | `diff-summary` | Posts a comment with changed file stats, flags action manifests, scripts, binaries |
 
-After all checks complete, a `report-status` job posts check runs and a `security-scan` commit status on the PR head, satisfying the branch protection requirement.
+After all checks complete, a `report-status` job posts check runs and a `security-scan` commit status on the PR head. The aggregate status is based on `dependency-review` and `diff-summary`; CodeQL is excluded from the aggregate since findings are tracked separately in the Code Scanning tab.
 
 ```
 sync-upstream completes
@@ -208,6 +214,10 @@ sync-upstream completes
       -> report-status posts check runs + commit status on PR
 ```
 
+All actions in the workflow templates are SHA-pinned to prevent supply chain attacks on the scan infrastructure itself.
+
+The security scan concurrency is set to never cancel in-progress runs, preventing an attacker from evading scans by rapidly pushing commits.
+
 ---
 
 ## Example: End-to-End
@@ -217,7 +227,7 @@ This example uses `acme/deploy-action` as the upstream and `SamFleming-TylerTech
 ### Create the fork
 
 ```bash
-./fork-action.sh acme/deploy-action --tag v1.0.1 --org SamFleming-TylerTech
+./fork-action.sh acme/deploy-action --tag v1.0.0 --org SamFleming-TylerTech
 ```
 
 No secrets needed -- the fork is ready to use immediately.
@@ -228,7 +238,7 @@ In the upstream repo, a maintainer:
 1. Pushes a new commit (adds a feature)
 2. Force-pushes `v1.0.0` to a different commit (tag mutation)
 3. Creates `v1.1.0` (new release)
-4. Deletes `v1.0.1` (tag removal)
+4. Deletes an existing tag (tag removal)
 
 ### Trigger the sync
 
@@ -242,11 +252,12 @@ gh workflow run sync-tags.yml    --repo my-org/deploy-action
 | Artifact | What it shows |
 |----------|--------------|
 | Sync PR | Upstream sync with diff stats, security-relevant files, review checklist |
-| PR checks | `security-scan`, `security-scan/codeql`, `security-scan/dependency-review`, `security-scan/diff-summary` -- all green |
+| PR checks | `security-scan`, `security-scan/codeql`, `security-scan/dependency-review`, `security-scan/diff-summary` |
 | PR comment | Security diff summary (files changed, lines added/removed, manifest/script/binary changes) |
+| Issue: divergence | Upstream history was rewritten, with investigation steps and security guidance |
 | Issue: tag mutation | `v1.0.0` moved to a different commit with comparison link |
 | Issue: new release | `v1.1.0` detected with security review checklist |
-| Issue: tag deleted | `v1.0.1` removed from upstream, fork copy preserved |
+| Issue: tag deleted | Tag removed from upstream, fork copy preserved |
 
 ---
 
