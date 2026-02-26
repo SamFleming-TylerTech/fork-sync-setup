@@ -80,9 +80,9 @@ Environment variables `FORK_ORG`, `TEMPLATES_REPO`, and `TEMPLATES_REF` can also
 fork-action.sh                              # Main bootstrap script
 verify-repo.sh                              # Fork verification script
 .github/workflows/
-  caller-sync-upstream.yml                  # Standalone sync template
-  caller-sync-tags.yml                      # Thin caller template
-  caller-security-scan.yml                  # workflow_run security scan template
+  caller-sync-upstream.yml                  # Thin caller -> shared workflow
+  caller-sync-tags.yml                      # Thin caller -> shared workflow
+  caller-security-scan.yml                  # Thin caller -> shared workflow
 templates/
   FORK_MANIFEST.json                        # Manifest template
   CODEOWNERS                                # CODEOWNERS template
@@ -93,4 +93,4 @@ docs/
 
 ## Related
 
-- [fork-sync-shared-workflow](https://github.com/SamFleming-TylerTech/fork-sync-shared-workflow) -- Reusable workflows (sync-tags delegates to this)
+- [fork-sync-shared-workflow](https://github.com/SamFleming-TylerTech/fork-sync-shared-workflow) -- Reusable workflows (all three callers delegate to this)

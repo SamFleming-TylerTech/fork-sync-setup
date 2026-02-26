@@ -263,9 +263,9 @@ gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/fork-test
 
 ## How It Scales
 
-`sync-upstream.yml` and `security-scan.yml` are standalone workflows with inline logic. `sync-tags.yml` is a thin caller that delegates to a reusable workflow in `fork-sync-shared-workflow` and auto-updates via the `@v1` floating tag.
+All three workflows (`sync-upstream.yml`, `sync-tags.yml`, `security-scan.yml`) are thin callers that delegate to reusable workflows in `fork-sync-shared-workflow`. They auto-update via the `@v1` floating tag -- push a fix to the shared repo and every fork picks it up on the next run.
 
-To push workflow updates to existing forks:
+To push caller template updates to existing forks:
 
 ```bash
 ./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org

@@ -690,9 +690,9 @@ print_summary() {
 
     echo ""
     echo -e "  ${COLOR_BOLD}Sync infrastructure added:${COLOR_RESET}"
-    echo "    - .github/workflows/sync-upstream.yml  (standalone, uses GITHUB_TOKEN)"
+    echo "    - .github/workflows/sync-upstream.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
     echo "    - .github/workflows/sync-tags.yml      (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
-    echo "    - .github/workflows/security-scan.yml  (workflow_run trigger, uses GITHUB_TOKEN)"
+    echo "    - .github/workflows/security-scan.yml  (caller -> ${TEMPLATES_REPO}@${TEMPLATES_REF})"
     echo "    - FORK_MANIFEST.json"
     echo "    - CODEOWNERS"
     echo "    - Labels: upstream-sync, needs-security-review, upstream-release, security-alert, upstream-tag-deleted"
