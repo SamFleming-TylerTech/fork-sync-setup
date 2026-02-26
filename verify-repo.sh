@@ -215,22 +215,6 @@ for label in "${REQUIRED_LABELS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Check: Secrets
-# ---------------------------------------------------------------------------
-echo ""
-echo -e "${COLOR_CYAN}Secrets${COLOR_RESET}"
-
-EXISTING_SECRETS="$(gh secret list --repo "${REPO}" --json name --jq '.[].name' 2>/dev/null || echo '')"
-
-for secret in FORK_SYNC_APP_ID FORK_SYNC_APP_PRIVATE_KEY; do
-    if echo "${EXISTING_SECRETS}" | grep -qx "${secret}"; then
-        record_pass "${secret}"
-    else
-        record_fail "${secret} missing"
-    fi
-done
-
-# ---------------------------------------------------------------------------
 # Check: Branch protection
 # ---------------------------------------------------------------------------
 echo ""
@@ -296,31 +280,6 @@ if [[ "${ACTIONS_ENABLED}" == "true" ]]; then
     record_pass "GitHub Actions enabled"
 else
     record_fail "GitHub Actions disabled"
-fi
-
-# ---------------------------------------------------------------------------
-# Check: GitHub App installed
-# ---------------------------------------------------------------------------
-echo ""
-echo -e "${COLOR_CYAN}GitHub App${COLOR_RESET}"
-
-# Use the app's JWT to check installation -- fall back to checking if the
-# secrets exist and a recent workflow successfully generated an app token.
-# The simplest reliable check: look for a successful sync-upstream run,
-# which only passes if the app token step succeeds.
-# Direct API check requires app credentials, so we infer from workflow history.
-APP_TOKEN_RUNS="$(gh run list --repo "${REPO}" --workflow sync-upstream.yml --limit 1 --json conclusion --jq '.[0].conclusion' 2>/dev/null || echo '')"
-APP_SECRET_SET=false
-if echo "${EXISTING_SECRETS}" | grep -qx "FORK_SYNC_APP_ID" && echo "${EXISTING_SECRETS}" | grep -qx "FORK_SYNC_APP_PRIVATE_KEY"; then
-    APP_SECRET_SET=true
-fi
-
-if [[ "${APP_TOKEN_RUNS}" == "success" ]]; then
-    record_pass "GitHub App working (last sync-upstream succeeded)"
-elif [[ "${APP_SECRET_SET}" == "true" ]]; then
-    record_warn "GitHub App secrets set but not yet verified (run sync-upstream to confirm)"
-else
-    record_fail "GitHub App not configured (secrets missing)"
 fi
 
 # ---------------------------------------------------------------------------

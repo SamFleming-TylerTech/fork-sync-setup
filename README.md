@@ -1,6 +1,6 @@
 # Fork Project Workflow
 
-Automated tooling for forking third-party GitHub Actions into your organization with upstream sync, tag monitoring, and security scanning.
+Automated tooling for forking third-party GitHub Actions into your organization with upstream sync, tag monitoring, and security scanning. Zero secrets required.
 
 ## Why
 
@@ -18,33 +18,18 @@ This repo provides `fork-action.sh` to bootstrap forks with sync infrastructure 
 ## Quick Start
 
 ```bash
-# Fork a new action (no-app mode, zero secrets needed)
-./fork-action.sh peter-evans/create-pull-request --tag v7.0.8 --no-app
-
-# Fork into a specific org/user
-./fork-action.sh irongut/CodeCoverageSummary --tag v1.3.0 --org SamFleming-TylerTech --no-app
-
-# Fork with GitHub App mode (requires app secrets)
+# Fork a new action
 ./fork-action.sh peter-evans/create-pull-request --tag v7.0.8
 
+# Fork into a specific org/user
+./fork-action.sh irongut/CodeCoverageSummary --tag v1.3.0 --org SamFleming-TylerTech
+
 # Add sync infra to an existing fork
-./fork-action.sh irongut/CodeCoverageSummary --existing --org SamFleming-TylerTech --no-app
+./fork-action.sh irongut/CodeCoverageSummary --existing --org SamFleming-TylerTech
 
 # Update sync infra on an existing fork
-./fork-action.sh irongut/CodeCoverageSummary --existing --force-update --org SamFleming-TylerTech --no-app
+./fork-action.sh irongut/CodeCoverageSummary --existing --force-update --org SamFleming-TylerTech
 ```
-
-## Modes
-
-### No-App Mode (`--no-app`)
-
-Recommended for most users. Uses `GITHUB_TOKEN` for everything -- no secrets, no GitHub App setup. The security scan triggers automatically via `workflow_run` after sync-upstream completes.
-
-### App Mode (default)
-
-Uses a GitHub App token to create PRs, which allows the security scan to trigger via `on: pull_request`. Requires a GitHub App with `FORK_SYNC_APP_ID` and `FORK_SYNC_APP_PRIVATE_KEY` secrets. See the [walkthrough](docs/walkthrough.md) for setup instructions.
-
-See [docs/app-vs-noapp-comparison.md](docs/app-vs-noapp-comparison.md) for a detailed comparison.
 
 ## What fork-action.sh Creates
 
@@ -59,13 +44,14 @@ FORK_MANIFEST.json     # Upstream provenance and sync state
 CODEOWNERS             # Protects sync infrastructure files
 ```
 
+No secrets are needed. Everything uses `GITHUB_TOKEN`. The security scan triggers automatically via `workflow_run` after sync-upstream completes, posts check runs and commit statuses on the PR, and satisfies branch protection.
+
 ## Options
 
 | Flag | Description |
 |------|-------------|
 | `--org <org>` | Target GitHub org or user (default: `tyler-technologies-oss`) |
 | `--tag <tag>` | Pin a specific upstream tag (e.g., `v7.0.8`) |
-| `--no-app` | Skip GitHub App requirement (uses GITHUB_TOKEN only) |
 | `--existing` | Operate on an already-forked repo |
 | `--force-update` | Overwrite existing sync infrastructure (use with `--existing`) |
 | `--templates-repo <r>` | Central templates repo (default: `SamFleming-TylerTech/fork-sync-shared-workflow`) |
@@ -84,22 +70,18 @@ Environment variables `FORK_ORG`, `TEMPLATES_REPO`, and `TEMPLATES_REF` can also
 ```
 fork-action.sh                              # Main bootstrap script
 verify-repo.sh                              # Fork verification script
-set-secrets.sh                              # Secret setup helper (app mode)
 .github/workflows/
-  caller-sync-upstream.yml                  # App mode: thin caller template
-  caller-sync-upstream-noapp.yml            # No-app mode: standalone sync template
-  caller-sync-tags.yml                      # Caller template (both modes)
-  caller-security-scan.yml                  # App mode: thin caller template
-  caller-security-scan-noapp.yml            # No-app mode: workflow_run template
+  caller-sync-upstream.yml                  # Standalone sync template
+  caller-sync-tags.yml                      # Thin caller template
+  caller-security-scan.yml                  # workflow_run security scan template
 templates/
   FORK_MANIFEST.json                        # Manifest template
   CODEOWNERS                                # CODEOWNERS template
 docs/
   walkthrough.md                            # Step-by-step guide
-  app-vs-noapp-comparison.md                # Mode comparison
   workflow-migration-example.yml            # Before/after migration example
 ```
 
 ## Related
 
-- [fork-sync-shared-workflow](https://github.com/SamFleming-TylerTech/fork-sync-shared-workflow) -- Reusable workflows referenced by app mode caller templates
+- [fork-sync-shared-workflow](https://github.com/SamFleming-TylerTech/fork-sync-shared-workflow) -- Reusable workflows (sync-tags delegates to this)

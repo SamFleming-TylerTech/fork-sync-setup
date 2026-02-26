@@ -30,116 +30,13 @@ You wouldn't know. The tag resolves to whatever the upstream maintainer decides.
 
 ---
 
-## Choosing a Mode
-
-Fork-sync supports two modes. Choose the one that fits your setup:
-
-| | No-App Mode (default) | App Mode |
-|-|----------------------|----------|
-| **Setup** | Zero additional setup | Requires GitHub App + secrets |
-| **Secrets** | None | `FORK_SYNC_APP_ID` + `FORK_SYNC_APP_PRIVATE_KEY` |
-| **Security scan trigger** | `workflow_run` (auto-triggers after sync completes) | `on: pull_request` (triggered by PR creation) |
-| **Maintenance** | `sync-upstream` and `security-scan` are standalone -- use `--force-update` to propagate changes | All 3 workflows are thin callers -- updates propagate automatically |
-| **When to use** | Most teams, personal accounts, quick setup | Orgs with an existing GitHub App, teams needing fully centralized workflow logic |
-
-**Use `--no-app`** (recommended for most users):
-
-```bash
-./fork-action.sh some-vendor/deploy-action --tag v2.0.0 --org my-org --no-app
-```
-
-**Use app mode** (omit `--no-app`):
-
-```bash
-./fork-action.sh some-vendor/deploy-action --tag v2.0.0 --org my-org
-```
-
-See [App vs No-App Comparison](app-vs-noapp-comparison.md) for a detailed breakdown.
-
----
-
-## Setting Up a GitHub App (App Mode Only)
-
-Skip this section if using `--no-app`.
-
-The sync-upstream workflow uses a GitHub App token to create PRs. This allows the security scan to auto-trigger on new PRs (a regular `GITHUB_TOKEN` can't trigger `on: pull_request` workflows). Corp-Dev will need to assist with this section. The secrets can be set as org-level secrets so all forks inherit them.
-
-### 1. Create the App
-
-1. Go to **GitHub Settings > Developer settings > GitHub Apps > New GitHub App**
-   - For an org: `https://github.com/organizations/YOUR-ORG/settings/apps/new`
-   - For a personal account: `https://github.com/settings/apps/new`
-
-2. Fill in the basics:
-   - **App name**: `fork-sync` (or any name you prefer)
-   - **Homepage URL**: Your org's GitHub URL
-   - **Webhook**: Uncheck "Active" (not needed)
-
-3. Set permissions (under **Repository permissions**):
-   - **Contents**: Read & write
-   - **Issues**: Read & write
-   - **Pull requests**: Read & write
-   - **Metadata**: Read-only (auto-selected)
-
-4. Under **Where can this app be installed?**, select:
-   - "Only on this account" (recommended)
-
-5. Click **Create GitHub App**.
-
-### 2. Note the App ID
-
-After creation, you'll land on the app's settings page. The **App ID** is displayed near the top (e.g., `1234567`). Save this -- you'll need it as a repo secret.
-
-### 3. Generate a Private Key
-
-1. Scroll down to **Private keys**
-2. Click **Generate a private key**
-3. A `.pem` file downloads automatically
-4. Save this file securely -- you'll need its contents as a repo secret
-
-### 4. Install the App
-
-1. (for your account) Go to Your account Settings > Integrations > Applications
-   (Or for an org) Organization Settings > Installed GitHub Apps
-2. Click Configure next to the app
-3. Change the repository access
-
-### 5. Add Secrets to Your Fork
-
-Each forked repo needs two secrets:
-
-```bash
-# Set the App ID
-gh secret set FORK_SYNC_APP_ID --repo YOUR-ORG/forked-action
-
-# Set the private key (paste the full .pem contents when prompted)
-gh secret set FORK_SYNC_APP_PRIVATE_KEY --repo YOUR-ORG/forked-action < path/to/private-key.pem
-```
-
-Or set them as **org-level secrets** so all forks inherit them:
-
-```bash
-gh secret set FORK_SYNC_APP_ID --org YOUR-ORG --visibility all
-gh secret set FORK_SYNC_APP_PRIVATE_KEY --org YOUR-ORG --visibility all < path/to/private-key.pem
-```
-
----
-
 ## Step 1: Fork an Action
 
-### No-App Mode
-
-```bash
-./fork-action.sh some-vendor/deploy-action --tag v2.0.0 --org my-org --no-app
-```
-
-### App Mode
-
 ```bash
 ./fork-action.sh some-vendor/deploy-action --tag v2.0.0 --org my-org
 ```
 
-Both modes perform the same steps:
+This:
 
 - Creates `my-org/deploy-action` as a GitHub fork
 - Adds an `upstream-tracking` branch
@@ -149,6 +46,8 @@ Both modes perform the same steps:
 - Creates required labels (`upstream-sync`, `needs-security-review`, etc.)
 - Enables branch protection (1 reviewer + `security-scan` status check required)
 - Creates an annotated tag `v2.0.0` pinned to the reviewed upstream commit
+
+No secrets are needed. Everything uses `GITHUB_TOKEN`.
 
 Output:
 
@@ -161,13 +60,12 @@ Output:
   Upstream:         https://github.com/some-vendor/deploy-action
   Default branch:   main
   Tracking branch:  upstream-tracking
-  Templates repo:   SamFleming-TylerTech/fork-sync-shared-workflow@v1
   Pinned tag:       v2.0.0
 
   Next steps:
     1. Review the fork
     2. Verify GitHub Actions are running
-    3. No secrets required (using GITHUB_TOKEN).
+    3. No secrets required (uses GITHUB_TOKEN).
     4. Reference the pinned tag in workflows:
          uses: my-org/deploy-action@v2.0.0
 ============================================================
@@ -220,7 +118,7 @@ Checks if the upstream repo has new commits. If it does:
    - List of security-relevant file changes (action.yml, scripts, Dockerfiles)
    - Link to the upstream commit comparison
    - Review checklist
-3. Security scan auto-triggers (via `workflow_run` in no-app mode, via PR event in app mode)
+3. Security scan auto-triggers via `workflow_run` after sync completes
 
 Example PR body:
 
@@ -291,16 +189,14 @@ The fork's tag is unaffected.
 
 ### Security Scan (on every sync PR)
 
-Triggers automatically after sync-upstream completes. Runs two checks in parallel:
+Triggers automatically after sync-upstream completes via `workflow_run`. Runs two checks in parallel:
 
 | Check | What it does |
 |-------|-------------|
 | `dependency-review` | Scans for new vulnerabilities in dependency changes |
 | `diff-summary` | Posts a comment with changed file stats, flags action manifests, scripts, binaries |
 
-After all checks complete, a `report-status` job posts a `security-scan` commit status on the PR head, satisfying the branch protection requirement.
-
-**How it chains (no-app mode):**
+After all checks complete, a `report-status` job posts check runs and a `security-scan` commit status on the PR head, satisfying the branch protection requirement.
 
 ```
 sync-upstream completes
@@ -308,27 +204,19 @@ sync-upstream completes
     -> security-scan triggers
       -> find-pr discovers the open PR
       -> dependency-review, diff-summary run in parallel
-      -> report-status posts commit status on PR
-```
-
-**How it chains (app mode):**
-
-```
-sync-upstream creates PR with app token
-  -> on: pull_request fires
-    -> security-scan triggers via reusable workflow
+      -> report-status posts check runs + commit status on PR
 ```
 
 ---
 
-## Example: End-to-End (No-App Mode)
+## Example: End-to-End
 
-This example uses `uprightbass360/demo-action-noapp` as the upstream and `SamFleming-TylerTech` as the fork target.
+This example uses `uprightbass360/parity-test-noapp` as the upstream and `SamFleming-TylerTech` as the fork target.
 
 ### Create the fork
 
 ```bash
-./fork-action.sh uprightbass360/demo-action-noapp --tag v1.0.1 --org SamFleming-TylerTech --no-app
+./fork-action.sh uprightbass360/parity-test-noapp --tag v1.0.1 --org SamFleming-TylerTech
 ```
 
 No secrets needed -- the fork is ready to use immediately.
@@ -344,8 +232,8 @@ In the upstream repo, a maintainer:
 ### Trigger the sync
 
 ```bash
-gh workflow run sync-upstream.yml --repo SamFleming-TylerTech/demo-action-noapp
-gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/demo-action-noapp
+gh workflow run sync-upstream.yml --repo SamFleming-TylerTech/parity-test-noapp
+gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/parity-test-noapp
 ```
 
 ### Results
@@ -353,7 +241,7 @@ gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/demo-action-noapp
 | Artifact | What it shows |
 |----------|--------------|
 | Sync PR | Upstream sync with diff stats, security-relevant files, review checklist |
-| PR checks | `security-scan: pass` status posted on PR head |
+| PR checks | `security-scan`, `security-scan/dependency-review`, `security-scan/diff-summary` -- all green |
 | PR comment | Security diff summary (files changed, lines added/removed, manifest/script/binary changes) |
 | Issue: tag mutation | `v1.0.0` moved to a different commit with comparison link |
 | Issue: new release | `v1.1.0` detected with security review checklist |
@@ -361,72 +249,14 @@ gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/demo-action-noapp
 
 ---
 
-## Example: End-to-End (App Mode)
-
-This example uses `uprightbass360/demo-action` as the upstream and `SamFleming-TylerTech` as the fork target.
-
-### Create the fork
-
-```bash
-./fork-action.sh uprightbass360/demo-action --tag v1.0.1 --org SamFleming-TylerTech
-```
-
-### Add secrets
-
-```bash
-REPO="SamFleming-TylerTech/demo-action"
-
-# Use the set-secrets.sh helper
-./set-secrets.sh "$REPO" --app-id 1234567 --app-key path/to/private-key.pem
-```
-
-### Simulate upstream changes
-
-Same as no-app example above.
-
-### Trigger the sync
-
-```bash
-gh workflow run sync-upstream.yml --repo SamFleming-TylerTech/demo-action
-gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/demo-action
-```
-
-### Results
-
-Same artifacts as no-app mode. The only difference is the PR author (GitHub App bot vs `github-actions[bot]`) and the security scan triggers via `on: pull_request` instead of `workflow_run`.
-
----
-
 ## How It Scales
 
-### App Mode
+`sync-upstream.yml` and `security-scan.yml` are standalone workflows with inline logic. `sync-tags.yml` is a thin caller that delegates to a reusable workflow in `fork-sync-shared-workflow` and auto-updates via the `@v1` floating tag.
 
-The caller workflows in each fork are thin -- they just reference reusable workflows:
-
-```yaml
-# In the fork: .github/workflows/sync-upstream.yml
-jobs:
-  sync:
-    uses: SamFleming-TylerTech/fork-sync-shared-workflow/.github/workflows/sync-upstream.yml@v1
-    with:
-      upstream_owner: some-vendor
-      upstream_repo: deploy-action
-    secrets: inherit
-```
-
-All the logic lives in `fork-sync-shared-workflow`. When you fix a bug or add a feature there:
-- Tag it as `v1` (floating tag)
-- Every fork picks up the change on the next run
-- Zero per-fork maintenance
-
-### No-App Mode
-
-`sync-upstream.yml` and `security-scan.yml` are standalone workflows (not thin callers). `sync-tags.yml` remains a thin caller and auto-updates.
-
-To push workflow updates to existing no-app forks:
+To push workflow updates to existing forks:
 
 ```bash
-./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org --no-app
+./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org
 ```
 
 ---
@@ -449,11 +279,11 @@ gh pr list --repo my-org/deploy-action --label upstream-sync
 # View security issues
 gh issue list --repo my-org/deploy-action --label security-alert
 
-# Add sync infra to an existing fork (no-app)
-./fork-action.sh some-vendor/deploy-action --existing --org my-org --no-app
+# Add sync infra to an existing fork
+./fork-action.sh some-vendor/deploy-action --existing --org my-org
 
 # Update sync infra (overwrite workflows, manifest)
-./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org --no-app
+./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org
 
 # Verify fork setup
 ./verify-repo.sh my-org/deploy-action
