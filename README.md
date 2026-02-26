@@ -18,17 +18,17 @@ This repo provides `fork-action.sh` to bootstrap forks with sync infrastructure 
 ## Quick Start
 
 ```bash
-# Fork a new action
-./fork-action.sh acme/deploy-action --tag v7.0.8
+# Fork a new action and pin a tag
+./fork-action.sh acme/deploy-action --tag v2.0.0
 
 # Fork into a specific org/user
-./fork-action.sh acme/deploy-action --tag v1.3.0 --org SamFleming-TylerTech
+./fork-action.sh acme/deploy-action --tag v2.0.0 --org my-org
 
 # Add sync infra to an existing fork
-./fork-action.sh acme/deploy-action --existing --org SamFleming-TylerTech
+./fork-action.sh acme/deploy-action --existing --org my-org
 
 # Update sync infra on an existing fork
-./fork-action.sh acme/deploy-action --existing --force-update --org SamFleming-TylerTech
+./fork-action.sh acme/deploy-action --existing --force-update --org my-org
 ```
 
 ## What fork-action.sh Creates

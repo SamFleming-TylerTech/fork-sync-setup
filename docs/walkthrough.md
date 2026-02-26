@@ -7,7 +7,7 @@ A step-by-step guide to forking a third-party GitHub Action, setting up automate
 Your CI/CD pipeline uses a third-party action:
 
 ```yaml
-- uses: some-vendor/deploy-action@v2.0.0
+- uses: acme/deploy-action@v2.0.0
 ```
 
 What happens when:
@@ -33,7 +33,7 @@ You wouldn't know. The tag resolves to whatever the upstream maintainer decides.
 ## Step 1: Fork an Action
 
 ```bash
-./fork-action.sh some-vendor/deploy-action --tag v2.0.0 --org my-org
+./fork-action.sh acme/deploy-action --tag v2.0.0 --org my-org
 ```
 
 This:
@@ -60,7 +60,7 @@ Output:
 ============================================================
 
   Fork URL:         https://github.com/my-org/deploy-action
-  Upstream:         https://github.com/some-vendor/deploy-action
+  Upstream:         https://github.com/acme/deploy-action
   Default branch:   main
   Tracking branch:  upstream-tracking
   Pinned tag:       v2.0.0
@@ -93,7 +93,7 @@ Replace third-party references with your fork:
 
 ```yaml
 # Before (vulnerable to supply chain attacks)
-- uses: some-vendor/deploy-action@v2.0.0
+- uses: acme/deploy-action@v2.0.0
 
 # After (pinned to your reviewed fork)
 - uses: my-org/deploy-action@v2.0.0
@@ -131,7 +131,7 @@ Example PR body:
 ```
 ## Upstream Sync
 
-Syncing changes from `some-vendor/deploy-action@main`.
+Syncing changes from `acme/deploy-action@main`.
 
 ### Diff Stats
  action.yml    |  5 +++++
@@ -222,12 +222,10 @@ The security scan concurrency is set to never cancel in-progress runs, preventin
 
 ## Example: End-to-End
 
-This example uses `acme/deploy-action` as the upstream and `SamFleming-TylerTech` as the fork target.
-
 ### Create the fork
 
 ```bash
-./fork-action.sh acme/deploy-action --tag v1.0.0 --org SamFleming-TylerTech
+./fork-action.sh acme/deploy-action --tag v2.0.0 --org my-org
 ```
 
 No secrets needed -- the fork is ready to use immediately.
@@ -236,8 +234,8 @@ No secrets needed -- the fork is ready to use immediately.
 
 In the upstream repo, a maintainer:
 1. Pushes a new commit (adds a feature)
-2. Force-pushes `v1.0.0` to a different commit (tag mutation)
-3. Creates `v1.1.0` (new release)
+2. Force-pushes `v2.0.0` to a different commit (tag mutation)
+3. Creates `v2.1.0` (new release)
 4. Deletes an existing tag (tag removal)
 
 ### Trigger the sync
@@ -255,8 +253,8 @@ gh workflow run sync-tags.yml    --repo my-org/deploy-action
 | PR checks | `security-scan`, `security-scan/codeql`, `security-scan/dependency-review`, `security-scan/diff-summary` |
 | PR comment | Security diff summary (files changed, lines added/removed, manifest/script/binary changes) |
 | Issue: divergence | Upstream history was rewritten, with investigation steps and security guidance |
-| Issue: tag mutation | `v1.0.0` moved to a different commit with comparison link |
-| Issue: new release | `v1.1.0` detected with security review checklist |
+| Issue: tag mutation | `v2.0.0` moved to a different commit with comparison link |
+| Issue: new release | `v2.1.0` detected with security review checklist |
 | Issue: tag deleted | Tag removed from upstream, fork copy preserved |
 
 ---
@@ -268,7 +266,7 @@ All three workflows (`sync-upstream.yml`, `sync-tags.yml`, `security-scan.yml`) 
 To push caller template updates to existing forks:
 
 ```bash
-./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org
+./fork-action.sh acme/deploy-action --existing --force-update --org my-org
 ```
 
 ---
@@ -292,10 +290,10 @@ gh pr list --repo my-org/deploy-action --label upstream-sync
 gh issue list --repo my-org/deploy-action --label security-alert
 
 # Add sync infra to an existing fork
-./fork-action.sh some-vendor/deploy-action --existing --org my-org
+./fork-action.sh acme/deploy-action --existing --org my-org
 
 # Update sync infra (overwrite workflows, manifest)
-./fork-action.sh some-vendor/deploy-action --existing --force-update --org my-org
+./fork-action.sh acme/deploy-action --existing --force-update --org my-org
 
 # Verify fork setup
 ./verify-repo.sh my-org/deploy-action

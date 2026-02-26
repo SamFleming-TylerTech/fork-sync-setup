@@ -13,9 +13,9 @@ set -euo pipefail
 #   ./fork-action.sh <upstream_owner/repo> [--tag <tag>] [--existing]
 #
 # Examples:
-#   ./fork-action.sh acme/deploy-action --tag v7.0.8
-#   ./fork-action.sh acme/deploy-action --existing --tag v1.3.0
-#   ./fork-action.sh owner/repo --existing --force-update --org SamFleming-TylerTech
+#   ./fork-action.sh acme/deploy-action --tag v2.0.0
+#   ./fork-action.sh acme/deploy-action --existing --tag v2.1.0
+#   ./fork-action.sh acme/deploy-action --existing --force-update --org my-org
 ###############################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -86,19 +86,19 @@ OPTIONS:
 
 EXAMPLES:
     # Fork a new action and pin a tag:
-    ./fork-action.sh acme/deploy-action --tag v7.0.8
+    ./fork-action.sh acme/deploy-action --tag v2.0.0
 
     # Add sync infrastructure to an existing fork:
-    ./fork-action.sh acme/deploy-action --existing --tag v1.3.0
+    ./fork-action.sh acme/deploy-action --existing --tag v2.1.0
 
     # Fork to a personal account or different org:
-    ./fork-action.sh owner/repo --org my-github-username
+    ./fork-action.sh acme/deploy-action --org my-org
 
     # Fork without pinning a tag (sync infrastructure only):
-    ./fork-action.sh actions/checkout
+    ./fork-action.sh acme/deploy-action
 
     # Force update sync infrastructure on an existing fork:
-    ./fork-action.sh owner/repo --existing --force-update
+    ./fork-action.sh acme/deploy-action --existing --force-update
 
     # Use a different templates repo and version:
     ./fork-action.sh owner/repo --templates-repo my-org/my-templates --templates-ref v2
