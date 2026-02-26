@@ -211,12 +211,12 @@ sync-upstream completes
 
 ## Example: End-to-End
 
-This example uses `uprightbass360/parity-test-noapp` as the upstream and `SamFleming-TylerTech` as the fork target.
+This example uses `uprightbass360/fork-test` as the upstream and `SamFleming-TylerTech` as the fork target.
 
 ### Create the fork
 
 ```bash
-./fork-action.sh uprightbass360/parity-test-noapp --tag v1.0.1 --org SamFleming-TylerTech
+./fork-action.sh uprightbass360/fork-test --tag v1.0.1 --org SamFleming-TylerTech
 ```
 
 No secrets needed -- the fork is ready to use immediately.
@@ -232,8 +232,8 @@ In the upstream repo, a maintainer:
 ### Trigger the sync
 
 ```bash
-gh workflow run sync-upstream.yml --repo SamFleming-TylerTech/parity-test-noapp
-gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/parity-test-noapp
+gh workflow run sync-upstream.yml --repo SamFleming-TylerTech/fork-test
+gh workflow run sync-tags.yml    --repo SamFleming-TylerTech/fork-test
 ```
 
 ### Results
