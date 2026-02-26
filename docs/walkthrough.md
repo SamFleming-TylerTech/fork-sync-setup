@@ -46,7 +46,7 @@ This:
 - Creates required labels (`upstream-sync`, `needs-security-review`, `upstream-release`, `security-alert`, `upstream-tag-deleted`)
 - Enables GitHub Actions, issues, and vulnerability alerts on the fork
 - Configures branch protection:
-  - Default branch: 1 required reviewer, `security-scan` status check, enforced for admins
+  - Default branch: 1 required reviewer, stale review dismissal, `security-scan` status check, enforced for admins
   - `upstream-tracking`: force-push and deletion blocked, enforced for admins
 - Creates an annotated tag `v2.0.0` pinned to the reviewed upstream commit
 
@@ -120,7 +120,7 @@ Checks if the upstream repo has new commits. If it does:
 3. Updates `FORK_MANIFEST.json` with the new sync SHA and date
 4. Opens a PR to your default branch with:
    - Diff stats
-   - List of security-relevant file changes (action.yml, scripts, Dockerfiles, dist/)
+   - List of security-relevant file changes (action manifests, scripts, Dockerfiles, package.json, dist/, node_modules/)
    - Link to the upstream commit comparison
    - Review checklist
 
@@ -199,7 +199,7 @@ Triggers automatically after sync-upstream completes via `workflow_run`. Runs th
 
 | Check | What it does |
 |-------|-------------|
-| `codeql` | Runs CodeQL static analysis (javascript-typescript); informational only, results appear in the Code Scanning tab |
+| `codeql` | Runs CodeQL static analysis on JavaScript/TypeScript; informational only, results appear in the Code Scanning tab. Actions in other languages are not scanned by CodeQL but still receive dependency review and diff summary. |
 | `dependency-review` | Scans for new vulnerabilities in dependency changes |
 | `diff-summary` | Posts a comment with changed file stats, flags action manifests, scripts, binaries |
 
